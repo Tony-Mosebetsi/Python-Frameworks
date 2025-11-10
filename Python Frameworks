@@ -1,0 +1,96 @@
+import pandas as pd
+import re
+from collections import Counter
+
+# Defining a set of generic stop words for title analysis (Part 3)
+GENERIC_STOP_WORDS = set(['the', 'and', 'of', 'in', 'to', 'a', 'with', 'for', 'on', 'is', 'as', 'at', 'by', 'be', 'or', 'from', 'an', 'are', 'this', 'that', 'it', 'was', 'we', 'from', 'study', 'report', 'review', 'analysis', 'role', 'impact', 'data', 'new'])
+
+def load_and_clean_data(file_path):
+    """
+    Loads the CORD-19 metadata, handles missing data, removes duplicates,
+    and calculates abstract word count (Part 2: Feature Engineering).
+    
+    Args:
+        file_path (str): Path to the metadata CSV file.
+
+    Returns:
+        pd.DataFrame: Cleaned DataFrame with added features.
+    """
+    try:
+        # Load the data (Part 1)
+        df = pd.read_csv(file_path, low_memory=False)
+    except FileNotFoundError:
+        return None
+    
+    # --- Part 2: Data Cleaning and Preparation ---
+    # Fill missing abstracts with an empty string for word count calculation
+    df['abstract'] = df['abstract'].fillna('')
+    df['journal'] = df['journal'].fillna('Unknown Journal').str.strip()
+    
+    # Drop rows where critical fields (title, publish_time) are missing
+    df.dropna(subset=['title', 'publish_time'], inplace=True)
+    
+    # Remove duplicates based on SHA and title
+    df.drop_duplicates(subset=['sha', 'title'], keep='first', inplace=True)
+    
+    # Convert date columns to datetime format (Part 2)
+    df['publish_time'] = pd.to_datetime(df['publish_time'], errors='coerce')
+    df.dropna(subset=['publish_time'], inplace=True) 
+    
+    # Extract year from publication date (Part 2)
+    df['year'] = df['publish_time'].dt.year
+    
+    # Filter for relevant years
+    df = df[df['year'] >= 2019]
+
+    # Create new column: abstract word count (Part 2)
+    df['abstract_word_count'] = df['abstract'].apply(lambda x: len(x.split()))
+
+    return df
+
+def get_top_journals(df, n=5):
+    """
+    Analyzes and returns the top N journals by publication count (Part 3).
+    """
+    top_journals = df['journal'].value_counts().head(n)
+    return top_journals
+
+def get_temporal_trend(df):
+    """
+    Calculates the number of papers published per year (Part 3).
+    """
+    # Group by year and count the size
+    temporal_trend = df.groupby('year').size()
+    return temporal_trend
+
+def get_source_distribution(df):
+    """
+    Calculates the distribution of papers by source_x (Part 3).
+    """
+    source_dist = df['source_x'].value_counts()
+    return source_dist
+
+def get_frequent_title_words(df, n=10):
+    """
+    Tokenizes titles, removes stop words, and finds the N most frequent words (Part 3).
+    
+    Returns:
+        pd.Series: Top N words and their counts.
+    """
+    # Combine all titles into a single string
+    text = ' '.join(df['title'].astype(str).tolist())
+    
+    # Tokenize: split by non-word characters and convert to lower case
+    tokens = re.findall(r'\b\w+\b', text.lower())
+    
+    # Remove stop words and single-character words
+    filtered_tokens = [
+        word for word in tokens 
+        if word not in GENERIC_STOP_WORDS and len(word) > 2
+    ]
+    
+    # Count frequencies
+    word_counts = Counter(filtered_tokens)
+    
+    # Convert to Series for easy display
+    return pd.Series(word_counts).nlargest(n)
